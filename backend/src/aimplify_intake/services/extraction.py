@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -11,10 +12,99 @@ from aimplify_intake.schema.validation import validate_field_origin, validate_fi
 
 CandidateExtractor = Callable[[str], dict[str, Any]]
 
+_LABEL_MAP: dict[str, str] = {
+    "full name": "submitter_name",
+    "submitter name": "submitter_name",
+    "name": "submitter_name",
+    "work email": "submitter_email",
+    "submitter email": "submitter_email",
+    "email": "submitter_email",
+    "business unit": "business_unit",
+    "business unit / department": "business_unit",
+    "department": "business_unit",
+    "designation": "designation",
+    "designation / role": "designation",
+    "role": "designation",
+    "reporting manager": "reporting_manager",
+    "manager": "reporting_manager",
+    "manager email": "manager_email",
+    "idea title": "idea_title",
+    "title": "idea_title",
+    "idea category": "idea_category",
+    "category": "idea_category",
+    "aimplify platform": "aimplify_platform",
+    "platform": "aimplify_platform",
+    "idea maturity": "idea_maturity",
+    "maturity": "idea_maturity",
+    "problem statement": "problem_statement",
+    "problem": "problem_statement",
+    "proposed solution": "proposed_solution",
+    "solution": "proposed_solution",
+    "expected benefits": "expected_benefits",
+    "expected benefits / business value": "expected_benefits",
+    "business value": "expected_benefits",
+    "benefits": "expected_benefits",
+    "who benefits?": "target_beneficiaries",
+    "who benefits": "target_beneficiaries",
+    "target beneficiaries": "target_beneficiaries",
+    "estimated users": "estimated_users",
+    "estimated users / scale": "estimated_users",
+    "scale": "estimated_users",
+    "estimated effort": "estimated_effort",
+    "estimated effort to build": "estimated_effort",
+    "effort": "estimated_effort",
+    "priority level": "priority_level",
+    "priority": "priority_level",
+    "preferred technology": "preferred_technology",
+    "preferred technology / tools": "preferred_technology",
+    "technology": "preferred_technology",
+    "tools": "preferred_technology",
+    "submission type": "submission_type",
+    "related hackathon": "related_event",
+    "related hackathon / event": "related_event",
+    "related event": "related_event",
+    "event": "related_event",
+    "build intent": "build_intent",
+    "build intent (self / team)": "build_intent",
+    "team members": "team_members",
+    "reference links": "reference_links",
+    "submitter signature": "submitter_name",
+}
+
+_LABEL_PATTERN = re.compile(
+    r"(?m)^([A-Za-z0-9\s/?()\-]+):\s*(.*?)(?=(?:^[A-Za-z0-9\s/?()\-]+:|\Z))",
+    re.DOTALL,
+)
+
 
 def _default_candidate_extractor(text: str) -> dict[str, Any]:
-    del text
-    return {}
+    extracted: dict[str, Any] = {}
+    matches = _LABEL_PATTERN.findall(text)
+    for label, val in matches:
+        clean_label = label.strip().lower()
+        clean_val = val.strip()
+        key = _LABEL_MAP.get(clean_label)
+        if key and clean_val:
+            extracted[key] = clean_val
+
+    # Single-line name fallback (e.g. answering "What is your full name?")
+    if "submitter_name" not in extracted:
+        clean = text.strip()
+        name_match = re.match(
+            r"^(?:(?:my\s+(?:full\s+)?name\s+is\s+|i\s+am\s+|it'?s\s+|this\s+is\s+))?([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.'-]+){1,3})\.?$",
+            clean,
+            re.IGNORECASE,
+        )
+        if name_match:
+            extracted["submitter_name"] = name_match.group(1).strip()
+
+    # Single-line or standalone email fallback (e.g. answering "What is your work email?")
+    if "submitter_email" not in extracted and not matches:
+        email_match = re.search(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b", text)
+        if email_match:
+            extracted["submitter_email"] = email_match.group(1).strip()
+
+    return extracted
 
 
 def extract_safe_candidates(

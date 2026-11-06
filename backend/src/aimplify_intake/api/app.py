@@ -135,20 +135,24 @@ def create_app(
 
         return "employee-1"
 
-    def require_allowed_origin(origin: str | None) -> None:
+    def is_origin_allowed(origin: str | None) -> bool:
         if not origin:
-            raise HTTPException(status_code=403, detail="Forbidden.")
+            return False
         if origin in app.state.allowed_origins:
-            return
+            return True
         vercel_url = os.getenv("VERCEL_URL")
         if vercel_url and origin in (f"https://{vercel_url}", f"http://{vercel_url}"):
-            return
+            return True
         vercel_prod_url = os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
         if vercel_prod_url and origin in (f"https://{vercel_prod_url}", f"http://{vercel_prod_url}"):
-            return
+            return True
         if origin.endswith(".vercel.app"):
-            return
-        raise HTTPException(status_code=403, detail="Forbidden.")
+            return True
+        return False
+
+    def require_allowed_origin(origin: str | None) -> None:
+        if not is_origin_allowed(origin):
+            raise HTTPException(status_code=403, detail="Forbidden.")
 
     def authorized_submission(session_id: str, subject: str) -> IdeaSubmission:
         with session_factory() as session:
@@ -313,7 +317,7 @@ def create_app(
     @app.websocket("/api/v1/sessions/{session_id}/stream")
     async def intake_stream(websocket: WebSocket, session_id: str) -> None:
         origin = websocket.headers.get("origin", "")
-        if origin not in app.state.allowed_origins:
+        if not is_origin_allowed(origin):
             await websocket.close(code=4403)
             return
         try:

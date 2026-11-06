@@ -117,7 +117,9 @@ def create_app(
     }
 
     def subject_for(cookie: str | None) -> str:
-        if cookie and app.state.identity_verifier is not None:
+        if not cookie:
+            raise HTTPException(status_code=401, detail="Unauthenticated.")
+        if app.state.identity_verifier is not None:
             try:
                 identity = app.state.identity_verifier(cookie)
             except Exception as error:
@@ -126,9 +128,6 @@ def create_app(
             if not isinstance(subject, str) or not subject:
                 raise HTTPException(status_code=401, detail="Unauthenticated.")
             return subject
-
-        if app.state.identity_verifier is not None:
-            raise HTTPException(status_code=401, detail="Unauthenticated.")
 
         if os.getenv("AUTH_REQUIRED", "false").lower() in ("true", "1"):
             raise HTTPException(status_code=401, detail="Unauthenticated.")
@@ -248,15 +247,21 @@ def create_app(
     async def create_session(request: Request, response: Response) -> dict[str, str]:
         require_allowed_origin(request.headers.get("origin"))
         cookie = request.cookies.get("oidc_session")
-        subject = subject_for(cookie)
         if not cookie:
+            if app.state.identity_verifier is not None or os.getenv("AUTH_REQUIRED", "false").lower() in ("true", "1"):
+                raise HTTPException(status_code=401, detail="Unauthenticated.")
+            demo_token = f"demo-session-{uuid4().hex}"
+            is_secure = request.url.is_secure or request.headers.get("x-forwarded-proto") == "https"
             response.set_cookie(
                 key="oidc_session",
-                value="demo-session-token",
+                value=demo_token,
                 httponly=True,
                 samesite="lax",
-                secure=True,
+                secure=is_secure,
+                path="/",
             )
+            cookie = demo_token
+        subject = subject_for(cookie)
         with session_factory() as session:
             submission = create_submission(session, subject)
             return {

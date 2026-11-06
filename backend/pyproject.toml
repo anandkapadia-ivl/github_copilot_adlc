@@ -32,6 +32,9 @@ dev = [
   "mypy>=1.10.0",
 ]
 
+[tool.vercel]
+entrypoint = "src.aimplify_intake.main:app"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/aimplify_intake"]
 

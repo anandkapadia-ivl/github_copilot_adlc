@@ -129,8 +129,19 @@ def create_app(
         return subject
 
     def require_allowed_origin(origin: str | None) -> None:
-        if origin not in app.state.allowed_origins:
+        if not origin:
             raise HTTPException(status_code=403, detail="Forbidden.")
+        if origin in app.state.allowed_origins:
+            return
+        vercel_url = os.getenv("VERCEL_URL")
+        if vercel_url and origin in (f"https://{vercel_url}", f"http://{vercel_url}"):
+            return
+        vercel_prod_url = os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
+        if vercel_prod_url and origin in (f"https://{vercel_prod_url}", f"http://{vercel_prod_url}"):
+            return
+        if origin.endswith(".vercel.app"):
+            return
+        raise HTTPException(status_code=403, detail="Forbidden.")
 
     def authorized_submission(session_id: str, subject: str) -> IdeaSubmission:
         with session_factory() as session:
